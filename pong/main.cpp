@@ -198,7 +198,6 @@ void CheckBricks()
     float x1, x2, x3, x4, y1, y2, y3, y4;
     float eps_box = 0.1;
     float eps = 3;
-    int test;
 
     for (int i = 0; i < lenght_delta; i++)
     {
@@ -261,7 +260,6 @@ void CheckBricks()
                         bricks[x_][y_].x += 2 * window.width;
                     }
                 }
-                //test1
                 if (y > y1 - ball.rad && y < y4 + ball.rad) //стены
                 {
                     if (fabs(x - x4 - ball.rad) < eps)
