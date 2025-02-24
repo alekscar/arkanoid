@@ -4,26 +4,14 @@
 
 #include "windows.h"
 #include "math.h"
+#include <string>
 
-// секция данных игры  
-typedef struct {
-    float x, y, width, height, rad, dx, dy, speed;
-    HBITMAP hBitmap;//хэндл к спрайту шарика 
-} sprite;
-
-sprite racket;//ракетка игрока
-sprite enemy;//ракетка противника
-sprite ball;//шарик
-const int bx = 14;
-const int by = 4;
-sprite bricks[bx][by];
-sprite extra_ball;
-sprite heal;
-sprite fireball;
+void ShowBitmap(HDC hDC, int x, int y, int x1, int y1, HBITMAP hBitmapBall, bool alpha = false);
 
 struct {
     int score, balls;//количество набранных очков и оставшихся "жизней"
     bool action = false;//состояние - ожидание (игрок должен нажать пробел) или игра
+    bool gameMode = false;//false = menu true = game
 } game;
 
 struct {
@@ -31,6 +19,50 @@ struct {
     HDC device_context, context;// два контекста устройства (для буферизации)
     int width, height;//сюда сохраним размеры окна которое создаст программа
 } window;
+
+// секция данных игры  
+struct sprite {
+
+    float x, y, width, height, rad, dx, dy, speed;
+    HBITMAP hBitmap;//хэндл к спрайту шарика 
+    HBITMAP hBitmapLight;//хэндл к спрайту шарика 
+
+    void load(std::string name)
+    {
+        std::string name_unlight = name+".bmp";
+        std::string name_light = name + "_light.bmp";
+        
+        hBitmap = (HBITMAP)LoadImageA(NULL, name_unlight.c_str(), IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
+        hBitmapLight = (HBITMAP)LoadImageA(NULL, name_light.c_str(), IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
+    }
+
+    void show(bool hilight)
+    {
+        ShowBitmap(window.context, x, y, width, height, hilight ? hBitmapLight : hBitmap);
+    }
+
+    bool isHilighted()
+    {
+        POINT p;
+        GetCursorPos(&p);
+        ScreenToClient(window.hWnd, &p);
+
+        return p.x > x && p.x < x + width && p.y > y && p.y < y + height;
+    }
+
+
+};
+
+sprite racket;//ракетка игрока
+sprite enemy;//ракетка противника
+sprite ball;//шарик
+const int bx = 14;
+const int by = 4;
+sprite bricks[bx][by];
+sprite menu_back;
+sprite menu[3];
+
+
 
 HBITMAP hBack;// хэндл для фонового изображения
 
@@ -44,11 +76,28 @@ void InitGame()
     ball.hBitmap = (HBITMAP)LoadImageA(NULL, "ball.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
     racket.hBitmap = (HBITMAP)LoadImageA(NULL, "racket.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
     enemy.hBitmap = (HBITMAP)LoadImageA(NULL, "racket_enemy.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
-    extra_ball.hBitmap = (HBITMAP)LoadImageA(NULL, "extra_ball.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
-    fireball.hBitmap = (HBITMAP)LoadImageA(NULL, "fireball.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
-    heal.hBitmap = (HBITMAP)LoadImageA(NULL, "heal.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
     hBack = (HBITMAP)LoadImageA(NULL, "back.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
+    menu_back.hBitmap = (HBITMAP)LoadImageA(NULL, "menu_back.bmp", IMAGE_BITMAP, 0, 0, LR_LOADFROMFILE);
+
+
+    menu[0].load("start");
+    menu[1].load("options");
+    menu[2].load("quit");
+
     //------------------------------------------------------
+    game.gameMode = false;
+    menu_back.width = 600;
+    menu_back.height = 900;
+    float buttons_width = 502;
+    float buttons_height = 67;
+
+    for (int i = 0;i < 3;i++)
+    {
+        menu[i].width = 502;
+        menu[i].height = 67;
+        menu[i].x= window.width / 4;
+        menu[i].y = window.height / 4 + i * 200;
+    }
 
     racket.width = window.width;
     racket.height = 50;
@@ -63,12 +112,12 @@ void InitGame()
     float lenght = sqrt(ball.dx * ball.dx + ball.dy * ball.dy);
     ball.dy /= lenght;
     ball.dx /= lenght;
-    ball.speed = 5;
+    ball.speed = 9;
     ball.rad = 20;
     ball.x = window.width / 2;//x координата шарика - на середие ракетки
-    ball.y = +150;//шарик лежит сверху ракетки
+    //ball.y = win;//шарик лежит сверху ракетки
     //ball.x = racket.x;//x координата шарика - на середие ракетки
-    //ball.y = racket.y - ball.rad;//шарик лежит сверху ракетки
+    ball.y = racket.y - ball.rad;//шарик лежит сверху ракетки
 
     game.score = 1;
     game.balls = 3;
@@ -125,7 +174,7 @@ void ProcessInput()
     }
 }
 
-void ShowBitmap(HDC hDC, int x, int y, int x1, int y1, HBITMAP hBitmapBall, bool alpha = false)
+void ShowBitmap(HDC hDC, int x, int y, int x1, int y1, HBITMAP hBitmapBall, bool alpha)
 {
     HBITMAP hbm, hOldbm;
     HDC hMemDC;
@@ -152,7 +201,17 @@ void ShowBitmap(HDC hDC, int x, int y, int x1, int y1, HBITMAP hBitmapBall, bool
 
     DeleteDC(hMemDC); // Удаляем контекст памяти
 }
-
+void ShowMenu()
+{
+    ShowBitmap(window.context, window.width / 3, window.height / 4, menu_back.width, menu_back.height, menu_back.hBitmap); // Окно меню
+    
+    for (int i = 0;i < 3;i++)
+    {
+        menu[i].show(menu[i].isHilighted());
+    }
+    
+    
+}
 void ShowRacketAndBall()
 {
     ShowBitmap(window.context, 0, 0, window.width, window.height, hBack);//задний фон
@@ -370,6 +429,7 @@ void CheckFloor()
 
             ball.dy *= -1;
             ProcessSound("bounce.wav");//играем звук отскока
+           
         }
         else
         {//шарик не отбит
@@ -464,19 +524,31 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     InitGame();//здесь инициализируем переменные игры
 
     mciSendString(TEXT("play ..\\Debug\\music.mp3 repeat"), NULL, 0, NULL);
-    ShowCursor(NULL);
+    //ShowCursor(NULL);
 
-    while (!GetAsyncKeyState(VK_ESCAPE))
+    if (game.gameMode == false)
     {
-        ShowRacketAndBall();//рисуем фон, ракетку и шарик
-        ShowScore();//рисуем очик и жизни
-        BitBlt(window.device_context, 0, 0, window.width, window.height, window.context, 0, 0, SRCCOPY);//копируем буфер в окно
-        Sleep(16);//ждем 16 милисекунд (1/количество кадров в секунду)
+        while (!GetAsyncKeyState(VK_ESCAPE))
+        {
+            ShowMenu();
+            BitBlt(window.device_context, 0, 0, window.width, window.height, window.context, 0, 0, SRCCOPY);//копируем буфер в окно
+            Sleep(16);//ждем 16 милисекунд (1/количество кадров в секунду)
+        }
+    }
+    else
+    {
+        while (!GetAsyncKeyState(VK_ESCAPE))
+        {
+            ShowRacketAndBall();//рисуем фон, ракетку и шарик
+            ShowScore();//рисуем очик и жизни
+            BitBlt(window.device_context, 0, 0, window.width, window.height, window.context, 0, 0, SRCCOPY);//копируем буфер в окно
+            Sleep(16);//ждем 16 милисекунд (1/количество кадров в секунду)
 
-        ProcessInput();//опрос клавиатуры
-        LimitRacket();//проверяем, чтобы ракетка не убежала за экран
-        ProcessBall();//перемещаем шарик
-        ProcessRoom();//обрабатываем отскоки от стен и каретки, попадание шарика в картетку
+            ProcessInput();//опрос клавиатуры
+            LimitRacket();//проверяем, чтобы ракетка не убежала за экран
+            ProcessBall();//перемещаем шарик
+            ProcessRoom();//обрабатываем отскоки от стен и каретки, попадание шарика в картетку
+        }
     }
 
 }
